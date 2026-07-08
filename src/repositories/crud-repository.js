@@ -31,9 +31,11 @@ class CrudRepository {
         }
     }
 
-    async get(data) {
+    async get(data, transaction) {
         try {
-            const response = await this.model.findByPk(data.id);
+            const options = {};
+            if (transaction) options.transaction = transaction;
+            const response = await this.model.findByPk(data.id, options);
             return response;
         }
         catch (error) {

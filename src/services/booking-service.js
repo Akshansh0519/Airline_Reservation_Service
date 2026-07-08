@@ -18,7 +18,7 @@ async function createBooking(data) {
                 return JSON.parse(existingKey.response);
             }
             throw new AppError('Cannot process request: A booking with this idempotency key is currently in progress', StatusCodes.CONFLICT);
-        }
+        } 
     }
 
     const transaction = await db.sequelize.transaction();
@@ -50,13 +50,15 @@ async function createBooking(data) {
 
         await bookingRepository.update(booking.id, { status: BOOKED }, transaction);
 
-        const bookingDetails = await bookingRepository.get({ id: booking.id });
+        // Fetch updated booking WITHIN the transaction so we always get the committed data
+        const bookingDetails = await bookingRepository.get({ id: booking.id }, transaction);
         if (idempotencyKey) {
             await idempotencyRepository.updateByKey(idempotencyKey, bookingDetails, transaction);
         }
 
         await transaction.commit();
-        return bookingDetails;
+        // Return a plain object in case the instance becomes stale after commit
+        return bookingDetails ? bookingDetails.toJSON() : { id: booking.id, flightId: data.flightId, userId: data.userId, noOfSeats: data.noOfSeats, totalCost, status: BOOKED };
     } catch (error) {
         await transaction.rollback();
         if (error.response && error.response.data) {
