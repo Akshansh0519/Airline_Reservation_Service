@@ -48,23 +48,14 @@ async function createBooking(data) {
             dec: true
         });
 
-        await bookingRepository.update(booking.id, { status: BOOKED }, transaction);
-
-        // Fetch updated booking WITHIN the transaction so we always get the committed data
+        // Fetch booking WITHIN the transaction so we always get the committed data
         const bookingDetails = await bookingRepository.get({ id: booking.id }, transaction);
         if (idempotencyKey) {
             await idempotencyRepository.updateByKey(idempotencyKey, bookingDetails, transaction);
         }
 
         await transaction.commit();
-        Queue.sendMessageToQueue({ 
-            recepientEmail: 'akshanshranjan007#=@gmail.com',// Replace with actual email
-            subject: 'Booking Confirmation',
-            text: `Booking created successfully for user ${data.userId} on flight ${data.flightId} with booking ID ${booking.id}`, 
-            status: BOOKED 
-        });
-        // Return a plain object in case the instance becomes stale after commit
-        return bookingDetails ? bookingDetails.toJSON() : { id: booking.id, flightId: data.flightId, userId: data.userId, noOfSeats: data.noOfSeats, totalCost, status: BOOKED };
+        return bookingDetails ? (bookingDetails.toJSON ? bookingDetails.toJSON() : bookingDetails) : { id: booking.id, flightId: data.flightId, userId: data.userId, noOfSeats: data.noOfSeats, totalCost, status: 'initiated' };
     } catch (error) {
         await transaction.rollback();
         if (error.response && error.response.data) {
@@ -77,6 +68,69 @@ async function createBooking(data) {
             throw error;
         }
         throw new AppError('Something went wrong during the booking process: ' + error.message, StatusCodes.INTERNAL_SERVER_ERROR);
+    }
+}
+
+async function makePayment(data) {
+    const idempotencyKey = data.idempotencyKey;
+    if (!idempotencyKey) {
+        throw new AppError('idempotency key missing', StatusCodes.BAD_REQUEST);
+    }
+    const existingKey = await idempotencyRepository.getByKey(idempotencyKey);
+    if (existingKey) {
+        if (existingKey.response) {
+            return JSON.parse(existingKey.response);
+        }
+        throw new AppError('Cannot process request: A request with this idempotency key is currently in progress', StatusCodes.CONFLICT);
+    }
+
+    const transaction = await db.sequelize.transaction();
+    try {
+        await idempotencyRepository.createKey(idempotencyKey, transaction);
+
+        const bookingDetails = await bookingRepository.get({ id: data.bookingId }, transaction);
+        if (!bookingDetails) {
+            throw new AppError('Booking not found', StatusCodes.NOT_FOUND);
+        }
+        if (bookingDetails.status === CANCELLED) {
+            throw new AppError('The booking has expired or been cancelled', StatusCodes.BAD_REQUEST);
+        }
+        if (bookingDetails.status === BOOKED) {
+            await transaction.commit();
+            return bookingDetails.toJSON ? bookingDetails.toJSON() : bookingDetails;
+        }
+        if (Number(bookingDetails.totalCost) !== Number(data.totalCost)) {
+            throw new AppError('Amount of the payment doesnt match', StatusCodes.BAD_REQUEST);
+        }
+        if (Number(bookingDetails.userId) !== Number(data.userId)) {
+            throw new AppError('User corresponding to the booking doesnt match', StatusCodes.BAD_REQUEST);
+        }
+
+        await bookingRepository.update(data.bookingId, { status: BOOKED }, transaction);
+
+        const updatedBooking = await bookingRepository.get({ id: data.bookingId }, transaction);
+        await idempotencyRepository.updateByKey(idempotencyKey, updatedBooking, transaction);
+
+        await transaction.commit();
+
+        try {
+            await Queue.sendMessageToQueue({
+                recepientEmail: data.recepientEmail || 'akshanshranjan007@gmail.com',
+                subject: 'Flight booked',
+                text: `Booking successfully done for the booking ${updatedBooking.id}`,
+                status: BOOKED
+            });
+        } catch (queueErr) {
+            console.error('Failed to send notification message to queue:', queueErr);
+        }
+
+        return updatedBooking ? (updatedBooking.toJSON ? updatedBooking.toJSON() : updatedBooking) : { id: data.bookingId, flightId: bookingDetails.flightId, userId: data.userId, noOfSeats: bookingDetails.noOfSeats, totalCost: data.totalCost, status: BOOKED };
+    } catch (error) {
+        await transaction.rollback();
+        if (error instanceof AppError) {
+            throw error;
+        }
+        throw new AppError('Something went wrong while making payment: ' + error.message, StatusCodes.INTERNAL_SERVER_ERROR);
     }
 }
 
@@ -95,5 +149,6 @@ async function getBooking(id) {
 
 module.exports = {
     createBooking,
-    getBooking
+    getBooking,
+    makePayment
 };

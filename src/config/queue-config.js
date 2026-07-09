@@ -8,10 +8,6 @@ async function connectToRabbitMQ(){
         channel = await connection.createChannel();
         await channel.assertQueue(ServerConfig.RABBITMQ_QUEUE_NAME);
         console.log('Connected to RabbitMQ');
-        channel.consume(ServerConfig.RABBITMQ_QUEUE_NAME, (data) => {
-            console.log(`${Buffer.from(data.content)}`);
-            channel.ack(data); // Acknowledging the message after processing as its a TCP connection and we need to acknowledge the message after processing it so that it can be removed from the queue and not be re-delivered.
-        });
         return channel;
     }
     catch(error){

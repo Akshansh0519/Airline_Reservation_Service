@@ -9,4 +9,8 @@ router.post('/', BookingMiddleware.validateBooking, BookingController.createBook
 // GET /api/v1/bookings/:id
 router.get('/:id', BookingController.getBooking);
 
+// POST /api/v1/bookings/payments
+router.post('/payments', BookingController.makePayment);
+router.post('/payment', BookingController.makePayment);
+
 module.exports = router;
