@@ -1,5 +1,6 @@
 const express = require('express');
-const { ServerConfig, Logger } = require('./config');
+const { ServerConfig, Logger , Queue} = require('./config');
+ 
 const apiRoutes = require('./routes');
 const db = require('./models');
 
@@ -11,7 +12,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', apiRoutes);
 app.use('/bookingService/api', apiRoutes);
 
-app.listen(ServerConfig.PORT, () => {
+app.listen(ServerConfig.PORT, async() => {
     console.log(`Booking Service is running on port ${ServerConfig.PORT}`);
-    Logger.info(`Booking Service is running on port ${ServerConfig.PORT}`, {});
+    //Logger.info(`Booking Service is running on port ${ServerConfig.PORT}`, {});
+    await Queue.connectToRabbitMQ();
+
 });

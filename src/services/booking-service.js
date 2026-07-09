@@ -2,7 +2,7 @@ const axios = require('axios');
 const db = require('../models');
 const { StatusCodes } = require('http-status-codes');
 const { BookingRepository, IdempotencyRepository } = require('../repositories');
-const { ServerConfig } = require('../config');
+const { ServerConfig , Queue } = require('../config');
 const { AppError, ENUMS } = require('../utils');
 const { BOOKED, CANCELLED } = ENUMS.BOOKING_STATUS;
 
@@ -57,6 +57,12 @@ async function createBooking(data) {
         }
 
         await transaction.commit();
+        Queue.sendMessageToQueue({ 
+            recepientEmail: 'akshanshranjan007#=@gmail.com',// Replace with actual email
+            subject: 'Booking Confirmation',
+            text: `Booking created successfully for user ${data.userId} on flight ${data.flightId} with booking ID ${booking.id}`, 
+            status: BOOKED 
+        });
         // Return a plain object in case the instance becomes stale after commit
         return bookingDetails ? bookingDetails.toJSON() : { id: booking.id, flightId: data.flightId, userId: data.userId, noOfSeats: data.noOfSeats, totalCost, status: BOOKED };
     } catch (error) {
