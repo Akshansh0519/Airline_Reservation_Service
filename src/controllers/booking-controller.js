@@ -73,7 +73,8 @@ async function makePayment(req, res) {
             userId: req.body.userId,
             totalCost: req.body.totalCost,
             idempotencyKey: idempotencyKey,
-            recepientEmail: req.body.recepientEmail || req.body.recipientEmail
+            recepientEmail: req.body.recepientEmail || req.body.recipientEmail,
+            travelDate: req.body.travelDate || req.body.departureDate
         });
         return res.status(StatusCodes.OK).json({
             success: true,
